@@ -32,7 +32,7 @@ dist_thresh = 0.015      # default 0.015
 # change to "off" to switch off contam filter
 contam_toggle = "on"   # default "on" 
 #postproc
-af_thresh = 0.1  # default 0.15 (drops families smaller than 15% of largest likely_real family)
+af_thresh = 0.15  # default 0.15 (drops families smaller than 15% of largest likely_real family)
 agreement_thresh = 0.7   # default 0.7
 panel_thresh = 50        # default 50
 
