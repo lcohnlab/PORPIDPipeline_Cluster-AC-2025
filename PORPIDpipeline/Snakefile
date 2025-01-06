@@ -35,8 +35,6 @@ contam_toggle = "on"   # default "on"
 af_thresh = 0.1  # default 0.15 (drops families smaller than 15% of largest likely_real family)
 agreement_thresh = 0.7   # default 0.7
 panel_thresh = 50        # default 50
-# artifact_thresh = 5      # default 5 (new param)
-# fc_depth = 50            # default 50 (new param)
 
 #tar
 # change this to "false" if you dont want 
