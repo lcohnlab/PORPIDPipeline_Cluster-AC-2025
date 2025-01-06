@@ -1,13 +1,3 @@
-# Notes
-This version of the pipeline switched to using a maxfs filter to exclude artifactual families of smaller sizes. This works by selecting the largest likely_real family in the sample (before postproc filtering) and then setting a lower family size limit based on that. So a 0.1 maxfs filter would set a min fs of 10 if largest family was 100 and any families below 10 would be discarded. 
-
-This version of the pipeline was used to run MCA0835 batch 2 and three samples from SCOPE_gates_ATI
-   SCOPE1498-2022.09.21_PLA_pblib
-   SCOPE2153-2022.09.23_PLA_pblib
-   SCOPE2929-2022.01.31_PLA_pblib
-
-Because there were no differences in the core PORPID code between the 50x filter branch used to run the previous MCA samples, and this branch, and all artifact filtering was done afterwards using custom R scripts, this branch should be used for publication of the MCA datasets. 
-
 # PORPIDpipeline_FH_Cluster
 FredHutch Rhino Cluster Install of PORPIDpipeline
 
