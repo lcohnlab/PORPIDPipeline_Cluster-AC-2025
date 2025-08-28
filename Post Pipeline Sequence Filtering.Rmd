@@ -1,0 +1,164 @@
+---
+title: "Post-pipeline Sequence Filtering"
+output: html_document
+date: '2024-03-27'
+---
+
+Ben and Hugh Murrell have now designed a simple filter for sequences which pass through PORPIDpipeline from samples that are sequenced very deeply which selects only sequences present in the upper "nomral" end of the family size distribution. This excludes sequences derived from very small family sizes, resulting from extremely deep sequencing, which make up the long tail of the lower end of the distribution of which we have low confidence in accuracy. Results from another cohort suggest that excluding sequences from the smallest end of the family size distribution up to the point their sum reaches 15% of the total reads results in very consistent and reproducible removal of these sequences. We will use the same method and cutoff here. 
+
+Because consensus sequences are only generated from families with >4 reads to get the full list of all UMIs and their read numbers will need to use the tag file produced by the pipeline as input to determine the cutoffs instead of sequences in the alignments because it contains all UMI families observed in that sample. 
+
+A first pass using the filter was performed on the alignments Abby had already made from all sequences passing through the pipeline and trees were made which indicated any sequence to be removed by the filter in red. After confirming by examining the trees that important unique sequences were not lost and that the removed sequences do not significantly change the trees themselves (no large lineages lost) we moved forward and filtered the sequence alignments with a 15% cutoff for all but three samples. The alignments with all of the name changes will be filtered to produce final alignments per participant and per sample. Participant alignments will keep HXB2 and SGA sequences but those will be removed from sample alignments. 
+After examining cutoff data and trees, 15% looks adequate for all samples except three (835_2C5_w8_PR, 835_2E7_w8_PR, 835_2C5_w4_PR_rpt). cDNA for these three samples was created using the primer PB-AX-nef67-degen-mod. Samples from this primer seem to have a different distribution of family sizes and a 25% cutoff was required to select the upper dense cluster of families in these three samples. This same pattern was first observed in the other cohort when using this same primer and we will also filter differently for this primer. 
+
+-A first batch of sequences were filtered with this method in May 2024. 
+-A second batch of samples were sequenced and filtered in September 2024. These came from an updated version of PORPIDpipeline which employs the "maxfs filter" which attempts to perform this filtering step automatically as part of the PORPIDpipeline. The pipeline assigns any family with size less than 15% of the maximum family size in that sample as "possible_artefact" and discards it. So that all sequences in this dataset are filtered the same way we are not using that feature and filtering both datasets with this same code below. 
+
+The code below will read in the tag file for each sample, find the sequences to be removed at either 15% or 25%, create a plot indicating the selected cutoff within the family size distribution, write a file indicating which UMIs are flagged for removal, and a summary of how many sequences were removed.
+
+```{r}
+library(tidyverse)
+
+#create directories to save summary files
+dir.create(str_glue("summary_files/AC_MCA/final_plots"), recursive = TRUE, showWarnings = FALSE)
+dir.create(str_glue("summary_files/AC_MCA/flagged_sequences"), recursive = TRUE, showWarnings = FALSE)
+dir.create(str_glue("summary_files/AC_MCA/sample_info"), recursive = TRUE, showWarnings = FALSE)
+
+
+#batch = "Batch1"
+batch = "Batch2"
+
+files <- list.files(str_glue("Pipeline_Outputs/MCA_tags/{batch}/", full.names = TRUE, pattern = ".csv")) 
+
+for (f in files) {
+  
+  Sample = str_remove(f, "_pblib.*")
+  
+  #read in tag df for filtering and adjust names as needed
+  tag_df <- read_csv(str_glue("Pipeline_Outputs/MCA_tags/{batch}/{f}")) %>%
+    filter(tags == "fs<5" | tags == "likely_real"| tags == "possible_artefact") %>%
+    select(-probs) %>%
+    mutate(Sample = str_replace(Sample, "d0[:lower:]", "d0")) %>%
+    mutate(Sample = str_remove(Sample, "_alt")) %>%
+    mutate(seq_name = str_glue("{Sample}{UMI}"), .after = Sample) %>%
+    mutate(Sample = str_remove(Sample, "_pblib"))
+  
+  #order all family sizes, find sum
+  fs <- sort(tag_df$fs)
+  sum <- sum(tag_df$fs)
+  
+  if (str_detect(f, "835_2C5_w8_PR") | str_detect(f, "835_2E7_w8_PR") | str_detect(f, "835_2C5_w4_PR_rpt")) {
+    cutoff_value = 25
+  } else {
+    cutoff_value = 15
+  }
+   
+  #calculate cutoff value from indicated cutoff
+  cutoff <- (cutoff_value/100)*sum
+  
+  #find fs index where sum of all fs reach indicated cutoff 
+  n <- length(which(cumsum(fs) <= cutoff))
+  
+  #set filter to fs at indicated index
+  filter_val <- fs[n]
+  
+  #if index is 0 set filter to 0, otherwise set filter to fs at indicated index
+  if (n == 0) {
+    filter_val <- 0
+  } else {
+    filter_val <- fs[n]
+  }
+  
+  #percent cutoff for labeling plot
+  percent <- str_glue("{cutoff_value}%")
+  
+  #plot showing size of each family with selected cutoff
+  plot <- ggplot(tag_df, aes(Sample, fs)) +
+    geom_jitter(width = 0.2, alpha = 0.7) +
+    geom_segment(aes(x = 0.5, xend = 1.5, y = filter_val, yend = filter_val, color = percent), linetype = "solid") +
+    geom_segment(aes(x = 0.4, xend = 1.6, y = 5, yend = 5, color = "Fs 5 cutoff"), linetype = "dashed") +
+    scale_color_manual(breaks = c(percent,"Fs 5 cutoff"), values=c("magenta3", "black")) +
+    labs(colour = "", shape = "")
+
+  ggsave(plot, file = str_glue("summary_files/AC_MCA/final_plots/{Sample}_final_read_cutoff.png")) 
+  
+  #summarize which families are flagged for removal using indicated cutoff
+  filter_df <- mutate(tag_df, flagged = case_when(fs < filter_val ~TRUE,
+                                               TRUE ~FALSE)) %>%
+    mutate(filter = str_glue("{cutoff_value}%"), .after = Sample)
+  write_csv(filter_df, str_glue("summary_files/AC_MCA/flagged_sequences/{Sample}_flagged.csv"))
+  
+  #set cols
+  cols <- c("TRUE" = NA_real_,"FALSE" = NA_real_)
+
+  #count number of sequences in each sample and how many are removed after sequencing
+  samples <- group_by(filter_df, Sample, filter, flagged) %>%
+    filter(fs >4) %>% #count only those above min fs
+    count() %>%
+    pivot_wider(names_from = flagged, values_from = n) %>%
+    add_column(!!!cols[setdiff(names(cols), names(.))]) %>%
+    dplyr::rename("seqs_remaining" = `FALSE`) %>%
+    dplyr::rename("seqs_flagged" = `TRUE`) %>%
+    replace(is.na(.), 0) %>%
+    mutate(total_seqs = seqs_remaining+seqs_flagged, .after = filter) %>%
+    mutate(fract_removed = round(seqs_flagged/total_seqs, digits=2)) %>%
+    relocate(filter, .after = Sample)
+
+  write_csv(samples, str_glue("summary_files/AC_MCA/sample_info/{Sample}_sample_counts.csv"))
+
+}
+
+```
+
+After checking through all of the plots from the previous step to ensure correct placements of the cutoffs the alignments were filtered using the code below. 
+
+```{r}
+library(tidyverse)
+library(Biostrings)
+
+#alignments <- list.files("Alignments/AC_Aligned_3May24/corrected_names/individual_files/", pattern = ".fas")
+alignments <- list.files("Alignments/MCA0835_Batch2_August2024/", pattern = ".fas")
+
+#for each alignment, remove flagged sequences below the cutoff and write out filtered alignment
+for (f in alignments) {
+    
+  ptid <- str_remove(f, "_[:lower:].*")
+  
+  Sample = str_remove(f, "_pblib.*")
+  
+  Out_sample <- str_glue("Alignments/Filtered/{Sample}_NT_filtered.fasta")
+  
+  #read in fasta
+  #dna.set <- Biostrings::readDNAStringSet(str_glue("Alignments/AC_Aligned_3May24/corrected_names/individual_files/{f}"),"fasta")
+  dna.set <- Biostrings::readDNAStringSet(str_glue("Alignments/MCA0835_Batch2_August2024/{f}"),"fasta")
+  
+  #create sequence df from dna.set
+  seq_df <- data.frame(seq_name=names(dna.set), seq=as.character(dna.set)) %>%
+    mutate(sample = str_remove(seq_name, "[:upper:]{8}.*"), .before = seq_name) %>%
+    mutate(sample = str_remove(sample, "_pblib.*")) %>%
+    mutate(seq_name = str_remove(seq_name, " .*"))
+  
+  #create sample df from file indicating which UMIs are flagged for removal
+  sample_df <- read_csv(str_glue("summary_files/AC_MCA/flagged_sequences/{Sample}_flagged.csv"))
+  
+  #join sample_df to seq_df to indicate which sequences are below the cutoff
+  joined_df <- left_join(seq_df, sample_df) %>%
+    mutate(flagged = replace_na(flagged, FALSE))
+  
+  #apply filter to check everything looks right
+  filtered_df <- filter(joined_df, flagged==FALSE)
+  
+  #create index of which sequences should be kept
+  keeps <- joined_df$flagged==FALSE
+  
+  #subset sequences to discard sequences below cutoff
+  dna.set_filtered <- dna.set[keeps]
+  
+  #write out filtered alignment
+  writeXStringSet(dna.set_filtered, Out_sample)
+}
+
+
+```
+
+
