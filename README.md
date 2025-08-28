@@ -3,6 +3,7 @@ FredHutch Rhino Cluster Install of PORPIDpipeline
 
 This install and scripts are edited to run on the FH cluster set up with Rhino. The code for the current version of the pipeline exists in the MurrellGroup GitHub Page: **https://github.com/MurrellGroup/PORPIDpipeline**
 
+Code used for additional filtering beyond what PORPIDpipeline performed is saved in the R notebook Post Pipeline Sequence Filtering.Rmd
 
 # How To Run PORPID Pipeline
 
